@@ -218,6 +218,54 @@ func TestSymlink(t *testing.T) {
 	assertFollowedLines(t, f, testLines[1])
 }
 
+// Regression test for: Close() deadlocks when follow() is blocked in
+// the inner read loop (ReadBytes waiting for data). The closeCh select
+// is only in the outer loop, so Close() blocks forever on the unbuffered
+// closeCh send.
+func TestCloseDeadlockNoConsumer(t *testing.T) {
+	file := testFile(t, "TestCloseDeadlockNoConsumer")
+	f, err := New(file.Name(), Config{
+		Reopen: true,
+		Offset: 0,
+		Whence: io.SeekEnd,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a partial line (no trailing newline). The follower reads it via
+	// ReadBytes and blocks waiting for the newline delimiter. There is no
+	// consumer on f.Lines(), so sendLine would block too, but ReadBytes
+	// blocks first (it must complete before sendLine can be reached).
+	if _, err := file.WriteString("partial line"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	// Close() must return within the deadline. Before the fix it deadlocks.
+	done := make(chan struct{})
+	go func() {
+		f.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Close() deadlocked: follow() was blocked in the inner read loop")
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify the lines channel is closed (confirms run() called close()).
+	select {
+	case _, ok := <-f.Lines():
+		if ok {
+			t.Fatal("Lines channel should be closed after Close()")
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("Lines channel was not closed after Close()")
+	}
+}
+
 func testFile(t *testing.T, name string) *os.File {
 	// open in append mode since most loggers will be doing such
 	file, err := os.OpenFile(path.Join(tmpDir, name), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)

@@ -57,7 +57,7 @@ func New(filename string, config Config) (*Follower, error) {
 		filename: filename,
 		lines:    make(chan Line),
 		config:   config,
-		closeCh:  make(chan struct{}),
+		closeCh:  make(chan struct{}, 1),
 	}
 
 	err := t.reopen()
@@ -79,6 +79,9 @@ func (t *Follower) Err() error {
 }
 
 func (t *Follower) Close() {
+	if t.file != nil {
+		t.file.Close()
+	}
 	t.closeCh <- struct{}{}
 }
 
