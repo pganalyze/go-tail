@@ -247,7 +247,16 @@ func (t *Follower) follow() error {
 
 func (t *Follower) rewatch() error {
 	t.watcher.Remove(t.filename)
-	if err := t.reopen(); err != nil {
+
+	// After a rename the new file may not exist yet, retry for up to 1 minute
+	var err error
+	for i := 0; i < 20; i++ {
+		if err = t.reopen(); err == nil || !os.IsNotExist(err) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if err != nil {
 		return err
 	}
 
