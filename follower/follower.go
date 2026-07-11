@@ -150,7 +150,10 @@ func (t *Follower) follow() error {
 				break
 			}
 
-			t.sendLine(s, discarded)
+			if !t.sendLine(s, discarded) {
+				t.watcher.Remove(t.filename)
+				return nil
+			}
 		}
 
 		// we're now at EOF, so wait for changes
@@ -279,8 +282,13 @@ func (t *Follower) close(err error) {
 	close(t.lines)
 }
 
-func (t *Follower) sendLine(l []byte, d int) {
-	t.lines <- Line{l[:len(l)-1], d}
+func (t *Follower) sendLine(l []byte, d int) bool {
+	select {
+	case t.lines <- Line{l[:len(l)-1], d}:
+		return true
+	case <-t.closeCh:
+		return false
+	}
 }
 
 func (t *Follower) watchFileEvents(eventChan chan fsnotify.Event, errChan chan error) {
