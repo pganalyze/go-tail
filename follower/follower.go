@@ -40,16 +40,17 @@ type Config struct {
 }
 
 type Follower struct {
-	once     sync.Once
-	file     *os.File
-	filename string
-	lines    chan Line
-	err      error
-	config   Config
-	reader   *bufio.Reader
-	watcher  *fsnotify.Watcher
-	offset   int64
-	closeCh  chan struct{}
+	once      sync.Once
+	file      *os.File
+	filename  string
+	lines     chan Line
+	err       error
+	config    Config
+	reader    *bufio.Reader
+	watcher   *fsnotify.Watcher
+	offset    int64
+	closeCh   chan struct{}
+	closeOnce sync.Once
 }
 
 func New(filename string, config Config) (*Follower, error) {
@@ -57,7 +58,7 @@ func New(filename string, config Config) (*Follower, error) {
 		filename: filename,
 		lines:    make(chan Line),
 		config:   config,
-		closeCh:  make(chan struct{}, 1),
+		closeCh:  make(chan struct{}),
 	}
 
 	err := t.reopen()
@@ -82,7 +83,7 @@ func (t *Follower) Close() {
 	if t.file != nil {
 		t.file.Close()
 	}
-	t.closeCh <- struct{}{}
+	t.closeOnce.Do(func() { close(t.closeCh) })
 }
 
 func (t *Follower) run() {
