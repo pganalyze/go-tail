@@ -80,9 +80,6 @@ func (t *Follower) Err() error {
 }
 
 func (t *Follower) Close() {
-	if t.file != nil {
-		t.file.Close()
-	}
 	t.closeOnce.Do(func() { close(t.closeCh) })
 }
 
