@@ -8,7 +8,6 @@ import (
 	"os"
 	"path"
 	"runtime"
-	"sync"
 	"testing"
 	"time"
 
@@ -315,25 +314,20 @@ func writeLines(file *os.File, lines []string) error {
 func assertFollowedLines(t *testing.T, f *Follower, lines []string) {
 	assert := assert.New(t)
 
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
-		i := 0
-		for line := range f.Lines() {
-			assert.Equal(lines[i], line.String())
-			i++
-			if i == len(lines) {
-				return
-			}
+	i := 0
+	for line := range f.Lines() {
+		assert.Equal(lines[i], line.String())
+		i++
+		if i == len(lines) {
+			return
 		}
-	}()
+	}
 
+	// Lines() closed before all expected lines arrived. Err() is only safe to
+	// read once Lines() is closed, since the follower goroutine sets the error
+	// right before closing the channel.
 	if err := f.Err(); err != nil {
 		t.Fatal(err)
 	}
-
-	wg.Wait()
+	t.Fatalf("lines channel closed early after %d of %d lines", i, len(lines))
 }
